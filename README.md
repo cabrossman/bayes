@@ -62,7 +62,7 @@ We are trying to figure out the distribution from which the observations where g
 - likelihood has shared priors
 - shared priors cause shrinkage among all thetas especially at extreemes
 
-## Chapter 3
+## Chapter 3 - Regression
 ### Simple linear regression
 - mean = a + bX with sd = e
 - a => normal dist, b => normal dist, e = half cauchy
@@ -152,7 +152,7 @@ We are trying to figure out the distribution from which the observations where g
         idata_vv = pm.sample(1000, tune=1000, return_inferencedata=True)
 
 
-# Chapter 4
+# Chapter 4 - GLM
 
 ### Single Predictor, Binary Output
 - Predict one of two categories using sepal length
@@ -175,19 +175,19 @@ We are trying to figure out the distribution from which the observations where g
 
 
 ### Multiple Predictors, Binary Output
-    ```
-    with pm.Model() as model_1: 
-        α = pm.Normal('α', mu=0, sd=10) 
-        β = pm.Normal('β', mu=0, sd=2, shape=len(x_n)) 
-        
-        μ = α + pm.math.dot(x_1, β) 
-        θ = pm.Deterministic('θ', 1 / (1 + pm.math.exp(-μ))) 
-        bd = pm.Deterministic('bd', -α/β[1] - β[0]/β[1] * x_1[:,0])
-        
-        yl = pm.Bernoulli('yl', p=θ, observed=y_1) 
+```
+with pm.Model() as model_1: 
+    α = pm.Normal('α', mu=0, sd=10) 
+    β = pm.Normal('β', mu=0, sd=2, shape=len(x_n)) 
     
-        idata_1 = pm.sample(2000, target_accept=0.9, return_inferencedata=True)
-    ```
+    μ = α + pm.math.dot(x_1, β) 
+    θ = pm.Deterministic('θ', 1 / (1 + pm.math.exp(-μ))) 
+    bd = pm.Deterministic('bd', -α/β[1] - β[0]/β[1] * x_1[:,0])
+    
+    yl = pm.Bernoulli('yl', p=θ, observed=y_1) 
+
+    idata_1 = pm.sample(2000, target_accept=0.9, return_inferencedata=True)
+```
 
 ### Multiple Predictors, Multiple Categories
 - Here we use standardize the X values using a z score
@@ -235,3 +235,141 @@ We are trying to figure out the distribution from which the observations where g
         idata_ZIP_reg = pm.sample(1000, return_inferencedata=True)
     ```
 
+
+# Chap 5 - Model Eval
+### Posterior Predictive Checks
+- Sample from the posterior on the parametric values and compare means & IQR (m1 vs m2 vs data)
+- Can compute pvalue as comparing simulated data to actual by counting the proportion of time the simulation is equal or greater than the one computed from data. If they agree we expect a p-value around 0.5 otherwise it may indicate prob of disagreement.
+### Occam's razor - simplicity and accuracy
+- we want simple models with high predictive abilities
+### Inormation criteria
+- WAIC (similar to AIC, but bayesian - also similar to LOO-CV)
+- Lower the better
+### Bayes Factor
+- BF = p(y | M0) / p(y | M1)
+-- 1-3 Anecdotal
+-- 3-10 Moderate
+-- 10-30 Strong
+-- 30-100 Very Strong
+-- >100 Extreme
+### Regularizing prior
+- weakly informative and informative priors restrict the model to overfit the data and have a regularization effect. 
+- Lasso & Ridge are similar to adding priors on hyper parameters
+
+# Chap 6 - Mixture Models
+- Many dataets cannot be properly described using a single probability dist - but can be described as a mixture of many dists. These are mixture models
+### Finite mixture models
+- weighted sum of probability density for k subgroups of the data
+- p(y|theta) = sum(weights-i * p-i(y|theta-i))
+- Assume weightes sum up to 1
+- p-i(y|theta-i) - can be any dist or hierarchical
+- we used the beta when we were unsure of two outcomes as a prior. For mixture models instead of two outcomes we have k outcomes. The generalization of the bernouli to K outcomes is the categorical distribution and the generalization of the beta distribution is the Dirichlet dist. 
+- Notice the use of "NormalMixture" instead of passing the vector: y = pm.Normal('y', mu=means[z], sd=sd, observed=cs_exp)
+    ```
+    clusters = 2
+    with pm.Model() as model_mg:
+        p = pm.Dirichlet('p', a=np.ones(clusters))
+        means = pm.Normal('means', mu=cs_exp.mean(), sd=10, shape=clusters)
+        sd = pm.HalfNormal('sd', sd=10)
+        y = pm.NormalMixture('y', w=p, mu=means, sd=sd, observed=cs_exp)
+        idata_mg = pm.sample(random_seed=123, return_inferencedata=True)
+    ```
+- Non idetnifibility/Label Switching. Problem is similar to high collinearity - cant determine the independent influence. Solutions are 1) forece components to be ordered (arrange means in strictly increasing order for example) 2) use informative priors
+
+fix
+```
+clusters = 2
+with pm.Model() as model_mgp:
+    p = pm.Dirichlet('p', a=np.ones(clusters))
+    means = pm.Normal('means', mu=np.array([.9, 1]) * cs_exp.mean(), sd=10, shape=clusters)
+    sd = pm.HalfNormal('sd', sd=10)
+    order_means = pm.Potential('order_means',tt.switch(means[1]-means[0] < 0, -np.inf, 0))
+    y = pm.NormalMixture('y', w=p, mu=means, sd=sd, observed=cs_exp)
+    idata_mgp = pm.sample(1000, random_seed=123, return_inferencedata=True)
+```
+- outcome is much more certain means
+
+### Non-finite mixture models
+- when you dont know k, you can use Dirichlet process
+- uses non-parametric model (ie we dont know the number of parameters, like we did before, but we let data collapse infinite params to few most likely)
+- DP draw is a distribution
+
+### Continuous mixture models
+- when you directly mix two types of models
+-- like zero inflated: poisson dist and zero generating process
+-- random and logistic regression
+
+# Chap 7 Gaussian Process
+### Gaussians
+- With enough gaussians you can model any dist
+- They have nice mathmatical properties in practice
+
+### Kernals
+- Kernel is a symmetric function to build the cov matrix
+- K(x, x*) = exp(-||x-x*||^2 / 2l^2)
+- l is length scale or bandwidth variance. Higher the l the higher the smoothness of the fuction
+
+### GP regresion
+f ~ gp(u, k(x,x*))
+y ~ N(u = f(x), sigma = eta) where eta ~ N(0,sigma)
+
+- In the example you can use your knowledge of the distance between islands to inform the kernal of the gp
+    ```
+    with pm.Model() as model_islands:
+        η = pm.HalfCauchy('η', 1)
+        ℓ = pm.HalfCauchy('ℓ', 1)
+        
+        cov = η * pm.gp.cov.ExpQuad(1, ls=ℓ)
+        gp = pm.gp.Latent(cov_func=cov)
+        f = gp.prior('f', X=islands_dist_sqr)
+
+        α = pm.Normal('α', 0, 10)
+        β = pm.Normal('β', 0, 1)
+        μ = pm.math.exp(α + f[index] + β * log_pop)
+        tt_pred = pm.Poisson('tt_pred', μ, observed=total_tools)
+        idata_islands = pm.sample(1000, tune=1000, target_accept=0.9, return_inferencedata=True)
+    ```
+
+### GP Classification
+```
+with pm.Model() as model_iris:
+    ℓ = pm.Gamma('ℓ', 2, 0.5)
+    cov = pm.gp.cov.ExpQuad(1, ℓ) + pm.gp.cov.WhiteNoise(1e-5)
+    gp = pm.gp.Latent(cov_func=cov)
+    f = gp.prior("f", X=X_1)
+    # logistic inverse link function and Bernoulli likelihood
+    y_ = pm.Bernoulli("y", p=pm.math.sigmoid(f), observed=y)
+    idata_iris = pm.sample(1000, return_inferencedata=True)
+```
+
+now can better handle uncertainty at the edges
+
+```
+with pm.Model() as model_iris2:
+    ℓ = pm.Gamma('ℓ', 2, 0.5)
+    c = pm.Normal('c', x_1.min())
+    τ = pm.HalfNormal('τ', 5)
+    cov = (pm.gp.cov.ExpQuad(1, ℓ) +
+        τ * pm.gp.cov.Linear(1, c) +
+        pm.gp.cov.WhiteNoise(1E-5))
+    gp = pm.gp.Latent(cov_func=cov)
+    f = gp.prior("f", X=X_1)
+    # logistic inverse link function and Bernoulli likelihood
+    y_ = pm.Bernoulli("y", p=pm.math.sigmoid(f), observed=y)
+    idata_iris2 = pm.sample(1000, chains=1, compute_convergence_checks=False, return_inferencedata=True)
+```
+
+model U shape
+```
+with pm.Model() as model_space_flu:
+ℓ = pm.HalfCauchy('ℓ', 1)
+cov = pm.gp.cov.ExpQuad(1, ℓ) + pm.gp.cov.WhiteNoise(1E-5)
+gp = pm.gp.Latent(cov_func=cov)
+f = gp.prior('f', X=age)
+y_ = pm.Bernoulli('y', p=pm.math.sigmoid(f), observed=space_flu)
+idata_space_flu = pm.sample(1000, chains=1, compute_convergence_checks=False, return_inferencedata=True)
+```
+
+Examples using Poisson & Two Dimensional multi variate classification exist as well
+
+# Chap 8 - Inference Machines
