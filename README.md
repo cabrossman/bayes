@@ -373,3 +373,72 @@ idata_space_flu = pm.sample(1000, chains=1, compute_convergence_checks=False, re
 Examples using Poisson & Two Dimensional multi variate classification exist as well
 
 # Chap 8 - Inference Machines
+## Non Markovian Methods
+### Grid Computing
+- define a reasonable interval for param
+- place a grid of point on that interval
+- for each point multiply the likelidhood and the prior
+- scales poorly with number of params
+
+### Quadratic / Laplace / Normal Approx
+- Find the mode of the distribution - this will be the mean also
+- Compute the Hessian matrix - from this we cana compute the standard deviation
+- does ok - but is unbounded (although some distributions are bounded - like binomial). There are tricks such as half normal and log it
+
+### Variational Methods
+- Used for cases with LARGE data
+- Estimate using simple dist (like Laplace) and measure closeness using KL divergance
+- for every parameter we pick a distribution. We pick the distribution that is easy (Normal, exponential, beta, etc) and try to minimize the difference of means between the dist and actual
+- Also known as mean field
+
+## Markovian Methods
+- Take more samples from higher probability areas. It visits each area proportional to its probability
+
+### Metropolis Hastings MC
+- simple implementation
+- used for discrete distributions
+```
+def metropolis(func, draws=10000):
+    """A very simple Metropolis implementation"""
+    trace = np.zeros(draws)
+    old_x = 0.5  # func.mean()
+    old_prob = func.pdf(old_x)
+
+    delta = np.random.normal(0, 0.5, draws)
+    for i in range(draws):
+        new_x = old_x + delta[i]
+        new_prob = func.pdf(new_x)
+        acceptance = new_prob / old_prob
+        if acceptance >= np.random.random():
+            trace[i] = new_x
+            old_x = new_x
+            old_prob = new_prob
+        else:
+            trace[i] = old_x
+
+    return trace
+```
+### Hamilton MC
+- extends the idea to calculate gradient at each step
+- HMC is more expense to compute gradient, but has higher acceptance rate so it explores mores
+- used for continuous distributions
+
+### Sequential MC
+- works in cases where where have multi modal dist
+- us tempering factor which is range to use the liklihood or prior, ranges [0,1]
+
+
+## Diagnosing the samples
+### Solutions to bad sampling
+- increase samples
+- remove a number of samples from the beginning of the trace
+- modify sampler parameters, such as increasing the length of the tuning phase
+- re-parametrize the model
+- transform the data (like centering)
+
+### Diagnosing issues
+- Look at the plot_trace function to find good mixing
+- RHAT stat - compare the variance between chains with the variance within chains - we expect a value of one, but are ok with values below 1.1
+- MCerror = std-dev(x)/sqrt(n)
+- Autocorrelation - shouldnt see much if any auto correlation
+- Effective sample size --> what sample do you need to overcome any issues with autocorrelation?
